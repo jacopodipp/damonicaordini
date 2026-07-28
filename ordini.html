@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Da Monica — Nuovo Ordine</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --ink:#0a0a0a;
+    --paper:#ffffff;
+    --line:#0a0a0a;
+    --line-soft:#d8d8d8;
+    --gray:#8a8a8a;
+    --red:#c0392b;
+    --amber:#c8862a;
+    --orange:#c15a1f;
+    --tap:#f2f2f2;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--paper); color:var(--ink);
+    font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;
+    overscroll-behavior:none;
+    user-select:none;
+  }
+  #app{ display:flex; flex-direction:column; height:100vh; height:100dvh; }
+
+  /* HEADER */
+  header{
+    padding:14px 18px 12px;
+    border-bottom:3px solid var(--line);
+    flex-shrink:0;
+  }
+  .eyebrow{
+    font-size:11px; letter-spacing:.18em; font-weight:700;
+    color:var(--gray); text-transform:uppercase;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .eyebrow .status{ display:flex; align-items:center; gap:6px; letter-spacing:.1em; }
+  .dot{ width:7px; height:7px; border-radius:50%; background:#2e7d32; box-shadow:0 0 0 3px rgba(46,125,50,.15); }
+  .dot.off{ background:#c0392b; box-shadow:0 0 0 3px rgba(192,57,43,.15); }
+  h1{ font-size:22px; font-weight:800; margin:2px 0 0; letter-spacing:-.01em; }
+
+  /* TABS */
+  nav.tabs{
+    display:flex; gap:8px; padding:12px 16px 10px;
+    flex-shrink:0; border-bottom:1px solid var(--line-soft);
+  }
+  .tab{
+    flex:1; text-align:center; padding:12px 6px;
+    border:2px solid var(--line); font-weight:800; font-size:14px;
+    letter-spacing:.03em; background:var(--paper); color:var(--ink);
+  }
+  .tab.active{ background:var(--ink); color:var(--paper); }
+  .tab:active{ opacity:.7; }
+
+  /* GRID */
+  main{ flex:1; overflow-y:auto; padding:14px 16px 10px; -webkit-overflow-scrolling:touch; }
+  .grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  }
+  .item{
+    border:2px solid var(--line); padding:16px 14px;
+    display:flex; flex-direction:column; gap:4px;
+    background:var(--paper); position:relative; min-height:70px;
+    justify-content:center;
+  }
+  .item:active{ background:var(--tap); }
+  .item .name{ font-weight:800; font-size:15px; letter-spacing:.01em; line-height:1.15; }
+  .item .price{ font-size:13px; color:var(--gray); font-weight:600; }
+  .item.c-amber .name{ color:var(--amber); }
+  .item.c-red .name{ color:var(--red); }
+  .item.c-orange .name{ color:var(--orange); }
+  .item .badge{
+    position:absolute; top:8px; right:8px;
+    background:var(--ink); color:var(--paper);
+    font-size:11px; font-weight:800; min-width:20px; height:20px;
+    border-radius:10px; display:flex; align-items:center; justify-content:center;
+    padding:0 5px;
+  }
+
+  /* CART BAR */
+  .cartbar{
+    flex-shrink:0; border-top:3px solid var(--line);
+    display:flex; align-items:stretch;
+    background:var(--paper);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .cart-info{
+    flex:1; display:flex; align-items:center; gap:10px;
+    padding:16px 18px; font-weight:800; font-size:15px;
+  }
+  .cart-info .muted{ color:var(--gray); font-weight:700; }
+  .cart-total{ margin-left:auto; font-size:17px; }
+  .send-btn{
+    width:130px; border:none; border-left:3px solid var(--line);
+    background:var(--line-soft); color:#9a9a9a; font-weight:800; font-size:15px;
+    letter-spacing:.03em; display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .send-btn.ready{ background:var(--ink); color:var(--paper); }
+  .send-btn:active.ready{ background:#222; }
+
+  /* MODAL (customization) */
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.35);
+    display:none; align-items:flex-end; z-index:50;
+  }
+  .overlay.open{ display:flex; }
+  .sheet{
+    background:var(--paper); width:100%; max-height:85vh;
+    border-top:3px solid var(--line);
+    padding:10px 20px 20px; overflow-y:auto;
+    padding-bottom:calc(20px + env(safe-area-inset-bottom));
+  }
+  .grabber{ width:40px; height:4px; background:var(--line-soft); border-radius:2px; margin:6px auto 14px; }
+  .sheet h2{ font-size:20px; font-weight:800; margin:0; }
+  .sheet .sheet-price{ color:var(--gray); font-weight:700; font-size:14px; margin:2px 0 16px; }
+  .section-label{ font-size:11px; letter-spacing:.14em; font-weight:800; color:var(--gray); margin:14px 0 8px; }
+  .opt-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .opt{
+    border:2px solid var(--line-soft); padding:14px 8px; text-align:center;
+    font-size:22px; font-weight:700; background:var(--paper); position:relative;
+  }
+  .opt .lbl{ font-size:12px; font-weight:800; margin-top:4px; display:block; letter-spacing:.02em; }
+  .opt.selected{ border-color:var(--ink); background:#f7f7f7; }
+  .opt.selected::after{
+    content:"✓"; position:absolute; top:4px; right:6px; font-size:12px; font-weight:900;
+  }
+  .mix-btn{
+    grid-column:1/-1; border:2px dashed var(--line); padding:14px; text-align:center;
+    font-weight:800; font-size:14px; letter-spacing:.04em; background:var(--paper); margin-top:2px;
+  }
+  .mix-btn.selected{ background:var(--ink); color:var(--paper); border-style:solid; }
+  .note-field{
+    width:100%; border:2px solid var(--line-soft); padding:12px; font-size:14px;
+    font-family:inherit; margin-top:14px; resize:none; height:56px;
+  }
+  .sheet-actions{ display:flex; gap:10px; margin-top:18px; }
+  .btn-cancel, .btn-add{
+    flex:1; padding:16px; font-weight:800; font-size:15px; letter-spacing:.02em; border:2px solid var(--line);
+  }
+  .btn-cancel{ background:var(--paper); color:var(--ink); }
+  .btn-add{ background:var(--ink); color:var(--paper); }
+
+  /* Toast */
+  .toast{
+    position:fixed; left:50%; bottom:110px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--paper); padding:14px 22px; font-weight:800;
+    font-size:14px; letter-spacing:.03em; opacity:0; transition:.25s; z-index:60; white-space:nowrap;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="eyebrow">
+      <span>NEW ORDER</span>
+      <span class="status"><span class="dot off" id="statusDot"></span><span id="statusText">CONNECTING…</span></span>
+    </div>
+    <h1>PICK ITEMS · THEN SEND</h1>
+  </header>
+
+  <nav class="tabs">
+    <div class="tab active" data-cat="coffee">COFFEE</div>
+    <div class="tab" data-cat="drinks">DRINKS</div>
+    <div class="tab" data-cat="food">FOOD</div>
+  </nav>
+
+  <main><div class="grid" id="grid"></div></main>
+
+  <div class="cartbar">
+    <div class="cart-info">
+      <span id="cartCount">0 ITEMS</span>
+      <span class="cart-total" id="cartTotal">€0.00</span>
+    </div>
+    <button class="send-btn" id="sendBtn">✓ SEND</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="sheet">
+    <div class="grabber"></div>
+    <h2 id="sheetName">Item</h2>
+    <div class="sheet-price" id="sheetPrice">€0.00</div>
+
+    <div class="section-label">VEGGIES</div>
+    <div class="opt-grid" id="veggieGrid"></div>
+    <div class="mix-btn" id="veggieMix">MIX</div>
+
+    <div class="section-label">SAUCES</div>
+    <div class="opt-grid" id="sauceGrid"></div>
+    <div class="mix-btn" id="sauceMix">MIX 🟡🔴</div>
+
+    <textarea class="note-field" id="noteField" placeholder="Note (opzionale)…"></textarea>
+
+    <div class="sheet-actions">
+      <button class="btn-cancel" id="cancelBtn">CANCEL</button>
+      <button class="btn-add" id="addBtn">ADD</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">ORDINE INVIATO</div>
+
+<script>
+/* ====== FIREBASE CONFIG — sostituisci con i tuoi valori ====== */
+const firebaseConfig = {
+  apiKey: "AIzaSyA5WmDB49lZ5MWtS4eQ_vqVx5babDkus6E",
+  databaseURL: "https://damonicaftiot-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "damonicaftiot"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const ordersRef = db.ref('orders');
+
+db.ref('.info/connected').on('value', (snap)=>{
+  const ok = snap.val() === true;
+  document.getElementById('statusDot').classList.toggle('off', !ok);
+  document.getElementById('statusText').textContent = ok ? 'ONLINE' : 'OFFLINE';
+});
+
+/* ====== MENU DATA ====== */
+const MENU = {
+  coffee: [
+    {id:'espresso', name:'ESPRESSO', price:1.50},
+    {id:'cappuccino', name:'CAPPUCCINO', price:2.50},
+    {id:'brioche', name:'BRIOCHE', price:2.00, color:'amber'},
+    {id:'krapfen', name:'KRAPFEN', price:2.50, color:'red'},
+    {id:'latte-m', name:'LATTE M', price:3.20},
+    {id:'americano', name:'AMERICANO', price:1.80},
+    {id:'the-caldo', name:'THE CALDO', price:2.50},
+    {id:'macchiatone', name:'MACCHIATONE', price:1.80},
+    {id:'deca', name:'DECA', price:1.80},
+    {id:'orzo', name:'ORZO', price:1.80},
+    {id:'doppio', name:'DOPPIO', price:3.00},
+    {id:'shakerato', name:'SHAKERATO', price:4.00},
+  ],
+  drinks: [
+    {id:'water', name:'WATER', price:1.50},
+    {id:'soft-drink', name:'SOFT DRINK', price:3.50},
+    {id:'bm', name:'BM', price:5.50, color:'amber'},
+    {id:'bp', name:'BP', price:3.50, color:'amber'},
+    {id:'spritz', name:'SPRITZ', price:4.50, color:'orange'},
+    {id:'spritz-bianco', name:'SPRITZ BIANCO', price:4.00},
+    {id:'prosecco', name:'PROSECCO', price:3.50},
+    {id:'grappa', name:'GRAPPA', price:5.00},
+    {id:'redbull', name:'REDBULL', price:4.50},
+    {id:'juice', name:'JUICE', price:3.50},
+  ],
+  food: [
+    {id:'hotdog', name:'HOTDOG', price:9.00, custom:true},
+    {id:'hamb', name:'HAMB', price:10.00, custom:true},
+    {id:'tost', name:'TOST', price:8.50, custom:true},
+    {id:'piada', name:'PIADA', price:10.00, custom:true},
+    {id:'pata', name:'PATA', price:4.50, color:'amber', custom:false},
+    {id:'brat', name:'BRAT', price:9.00, custom:true},
+    {id:'panino-cotto', name:'PANINO COTTO', price:8.50, custom:true},
+    {id:'verdurine', name:'VERDURINE', price:7.00, custom:true},
+    {id:'toast-veg', name:'TOAST VEG.', price:8.50, custom:true},
+    {id:'piada-crudo', name:'PIADA CRUDO', price:10.00, custom:true},
+    {id:'piada-veg', name:'PIADA VEG.', price:10.00, custom:true},
+    {id:'panino-crudo', name:'PANINO CRUDO', price:8.50, custom:true},
+    {id:'panino-veg', name:'PANINO VEG.', price:8.50, custom:true},
+  ]
+};
+
+const VEGGIES = [
+  {id:'cipolla', emoji:'🧅', lbl:'CIPOLLA'},
+  {id:'melanzane', emoji:'🍆', lbl:'MELANZANE'},
+  {id:'peperoncino', emoji:'🌶️', lbl:'PEPERONE'},
+  {id:'zucchine', emoji:'🥒', lbl:'ZUCCHINE'},
+  {id:'formaggio', emoji:'🧀', lbl:'FORMAGGIO'},
+  {id:'lattuga', emoji:'🥬', lbl:'LATTUGA'},
+  {id:'pomodoro', emoji:'🍅', lbl:'POMODORO'},
+];
+const MIX_VEGGIES = ['peperoncino','cipolla','melanzane','zucchine'];
+
+const SAUCES = [
+  {id:'ketchup', color:'#c0392b', lbl:'KETCHUP'},
+  {id:'maionese', color:'#e0b03a', lbl:'MAIONESE'},
+  {id:'senape', color:null, lbl:'SENAPE'},
+];
+const MIX_SAUCES = ['ketchup','maionese'];
+
+/* ====== STATE ====== */
+let currentCat = 'coffee';
+let cart = [];
+let activeItem = null;
+let selVeggies = new Set();
+let selSauces = new Set();
+
+/* ====== RENDER GRID ====== */
+function renderGrid(){
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  MENU[currentCat].forEach(item=>{
+    const div = document.createElement('div');
+    div.className = 'item' + (item.color ? ' c-'+item.color : '');
+    const qty = cart.filter(c=>c.id===item.id && !c.custom).length +
+                cart.filter(c=>c.id===item.id && c.custom).reduce((a,c)=>a+1,0);
+    div.innerHTML = `
+      <div class="name">${item.name}</div>
+      <div class="price">€${item.price.toFixed(2)}</div>
+      ${qty>0?`<div class="badge">${qty}</div>`:''}
+    `;
+    div.onclick = ()=> onItemTap(item);
+    grid.appendChild(div);
+  });
+}
+
+function onItemTap(item){
+  if(item.custom){
+    openSheet(item);
+  } else {
+    cart.push({...item, veggies:[], sauces:[], note:'', custom:false});
+    renderGrid(); renderCart();
+  }
+}
+
+/* ====== TABS ====== */
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.onclick = ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    currentCat = tab.dataset.cat;
+    renderGrid();
+  };
+});
+
+/* ====== SHEET (customization) ====== */
+function openSheet(item){
+  activeItem = item;
+  selVeggies = new Set();
+  selSauces = new Set();
+  document.getElementById('sheetName').textContent = item.name;
+  document.getElementById('sheetPrice').textContent = '€'+item.price.toFixed(2);
+  document.getElementById('noteField').value = '';
+
+  const vg = document.getElementById('veggieGrid');
+  vg.innerHTML = '';
+  VEGGIES.forEach(v=>{
+    const el = document.createElement('div');
+    el.className = 'opt';
+    el.innerHTML = `${v.emoji}<span class="lbl">${v.lbl}</span>`;
+    el.onclick = ()=>{
+      if(selVeggies.has(v.id)) selVeggies.delete(v.id); else selVeggies.add(v.id);
+      syncSheetUI();
+    };
+    el.dataset.id = v.id;
+    vg.appendChild(el);
+  });
+  document.getElementById('veggieMix').onclick = ()=>{
+    const allSel = MIX_VEGGIES.every(id=>selVeggies.has(id));
+    if(allSel){ MIX_VEGGIES.forEach(id=>selVeggies.delete(id)); }
+    else { MIX_VEGGIES.forEach(id=>selVeggies.add(id)); }
+    syncSheetUI();
+  };
+
+  const sg = document.getElementById('sauceGrid');
+  sg.innerHTML = '';
+  SAUCES.forEach(s=>{
+    const el = document.createElement('div');
+    el.className = 'opt';
+    el.innerHTML = s.color ? `<span style="display:inline-block;width:22px;height:22px;background:${s.color};border-radius:4px;"></span><span class="lbl">${s.lbl}</span>` : `<span class="lbl" style="font-size:14px;margin-top:0;">${s.lbl}</span>`;
+    el.onclick = ()=>{
+      if(selSauces.has(s.id)) selSauces.delete(s.id); else selSauces.add(s.id);
+      syncSheetUI();
+    };
+    el.dataset.id = s.id;
+    sg.appendChild(el);
+  });
+  document.getElementById('sauceMix').onclick = ()=>{
+    const allSel = MIX_SAUCES.every(id=>selSauces.has(id));
+    if(allSel){ MIX_SAUCES.forEach(id=>selSauces.delete(id)); }
+    else { MIX_SAUCES.forEach(id=>selSauces.add(id)); }
+    syncSheetUI();
+  };
+
+  syncSheetUI();
+  document.getElementById('overlay').classList.add('open');
+}
+
+function syncSheetUI(){
+  document.querySelectorAll('#veggieGrid .opt').forEach(el=>{
+    el.classList.toggle('selected', selVeggies.has(el.dataset.id));
+  });
+  document.querySelectorAll('#sauceGrid .opt').forEach(el=>{
+    el.classList.toggle('selected', selSauces.has(el.dataset.id));
+  });
+  document.getElementById('veggieMix').classList.toggle('selected', MIX_VEGGIES.every(id=>selVeggies.has(id)));
+  document.getElementById('sauceMix').classList.toggle('selected', MIX_SAUCES.every(id=>selSauces.has(id)));
+}
+
+document.getElementById('cancelBtn').onclick = ()=>{
+  document.getElementById('overlay').classList.remove('open');
+};
+document.getElementById('addBtn').onclick = ()=>{
+  cart.push({
+    ...activeItem,
+    veggies:[...selVeggies],
+    sauces:[...selSauces],
+    note: document.getElementById('noteField').value.trim(),
+    custom:true
+  });
+  document.getElementById('overlay').classList.remove('open');
+  renderGrid(); renderCart();
+};
+
+/* ====== CART ====== */
+function renderCart(){
+  const count = cart.length;
+  const total = cart.reduce((a,c)=>a+c.price,0);
+  document.getElementById('cartCount').textContent = count + (count===1?' ITEM':' ITEMS');
+  document.getElementById('cartTotal').textContent = '€'+total.toFixed(2);
+  const btn = document.getElementById('sendBtn');
+  btn.classList.toggle('ready', count>0);
+}
+
+document.getElementById('sendBtn').onclick = ()=>{
+  if(cart.length===0) return;
+  const order = {
+    items: cart,
+    total: cart.reduce((a,c)=>a+c.price,0),
+    createdAt: firebase.database.ServerValue.TIMESTAMP,
+    status: 'new'
+  };
+  ordersRef.push(order)
+    .then(()=>{
+      showToast('ORDINE INVIATO ✓');
+      cart = [];
+      renderGrid(); renderCart();
+    })
+    .catch(()=>{
+      showToast('ERRORE — RIPROVA');
+    });
+};
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+/* ====== INIT ====== */
+renderGrid();
+renderCart();
+</script>
+</body>
+</html>

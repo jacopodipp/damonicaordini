@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Da Monica — Cucina</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --ink:#0a0a0a; --paper:#ffffff; --line:#0a0a0a; --line-soft:#d8d8d8;
+    --gray:#8a8a8a; --green:#2e7d32; --amber:#c8862a;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{ margin:0; padding:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; height:100%; user-select:none; }
+  #app{ display:flex; flex-direction:column; height:100vh; }
+
+  header{ padding:16px 22px 14px; border-bottom:3px solid var(--line); flex-shrink:0;
+    display:flex; align-items:center; justify-content:space-between; }
+  .htitle{ font-size:24px; font-weight:800; letter-spacing:-.01em; }
+  .status{ display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800; letter-spacing:.1em; color:var(--gray); }
+  .dot{ width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 0 4px rgba(46,125,50,.15); }
+  .dot.off{ background:#c0392b; box-shadow:0 0 0 4px rgba(192,57,43,.15); }
+
+  nav.tabs{ display:flex; gap:0; border-bottom:1px solid var(--line-soft); flex-shrink:0; }
+  .vtab{ padding:14px 24px; font-weight:800; font-size:14px; letter-spacing:.05em; color:var(--gray); border-bottom:3px solid transparent; cursor:pointer; }
+  .vtab.active{ color:var(--ink); border-bottom-color:var(--ink); }
+  .vtab .count{ display:inline-block; margin-left:8px; background:var(--ink); color:var(--paper); border-radius:9px; font-size:11px; padding:1px 7px; }
+
+  main{ flex:1; overflow-y:auto; padding:20px; }
+  .board{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:16px;
+    align-content:start;
+  }
+  .empty{ color:var(--gray); font-weight:700; font-size:15px; padding:60px 0; text-align:center; grid-column:1/-1; }
+
+  .card{ border:2px solid var(--line); display:flex; flex-direction:column; background:var(--paper); }
+  .card.done{ opacity:.55; }
+  .card-head{ padding:12px 14px; border-bottom:2px solid var(--line); display:flex; align-items:center; justify-content:space-between; }
+  .order-num{ font-weight:800; font-size:15px; letter-spacing:.02em; }
+  .order-time{ font-size:12px; font-weight:700; color:var(--gray); }
+  .card-body{ padding:12px 14px; flex:1; display:flex; flex-direction:column; gap:10px; }
+  .line-item{ font-size:14px; }
+  .line-item .iname{ font-weight:800; }
+  .line-item .idet{ font-size:12px; color:var(--gray); margin-top:2px; line-height:1.4; }
+  .line-item .inote{ font-size:12px; color:var(--amber); font-weight:700; margin-top:2px; }
+  .card-foot{ border-top:2px solid var(--line); padding:10px; }
+  .btn-ready{ width:100%; padding:13px; border:2px solid var(--line); background:var(--ink); color:var(--paper);
+    font-weight:800; font-size:14px; letter-spacing:.03em; }
+  .btn-ready:active{ background:#222; }
+  .btn-ready.isdone{ background:var(--paper); color:var(--green); border-color:var(--green); }
+  .timer-badge{ font-size:11px; font-weight:800; color:var(--gray); padding:6px 0 0; text-align:center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="htitle">CUCINA · DA MONICA</div>
+    <div class="status"><span class="dot off" id="statusDot"></span><span id="statusText">CONNECTING…</span></div>
+  </header>
+
+  <nav class="tabs">
+    <div class="vtab active" data-view="new">IN ARRIVO <span class="count" id="countNew">0</span></div>
+    <div class="vtab" data-view="done">EVASI <span class="count" id="countDone">0</span></div>
+  </nav>
+
+  <main><div class="board" id="board"></div></main>
+</div>
+
+<script>
+/* ====== FIREBASE CONFIG — sostituisci con i tuoi valori (stessi di ordini.html) ====== */
+const firebaseConfig = {
+  apiKey: "AIzaSyA5WmDB49lZ5MWtS4eQ_vqVx5babDkus6E",
+  databaseURL: "https://damonicaftiot-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "damonicaftiot"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const ordersRef = db.ref('orders');
+
+db.ref('.info/connected').on('value', (snap)=>{
+  const ok = snap.val() === true;
+  document.getElementById('statusDot').classList.toggle('off', !ok);
+  document.getElementById('statusText').textContent = ok ? 'ONLINE' : 'OFFLINE';
+});
+
+const VEGGIE_LBL = {cipolla:'Cipolla', melanzane:'Melanzane', peperoncino:'Peperone', zucchine:'Zucchine', formaggio:'Formaggio', lattuga:'Lattuga', pomodoro:'Pomodoro'};
+const SAUCE_LBL = {ketchup:'Ketchup', maionese:'Maionese', senape:'Senape'};
+
+const RESET_MS = 40 * 60 * 1000; // 40 minuti
+let currentView = 'new';
+let orders = {}; // id -> order
+
+document.querySelectorAll('.vtab').forEach(tab=>{
+  tab.onclick = ()=>{
+    document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    currentView = tab.dataset.view;
+    render();
+  };
+});
+
+ordersRef.on('value', (snap)=>{
+  orders = snap.val() || {};
+  cleanupOldOrders();
+  render();
+});
+
+function cleanupOldOrders(){
+  const now = Date.now();
+  Object.entries(orders).forEach(([id, o])=>{
+    if(o.status === 'done' && o.doneAt && (now - o.doneAt > RESET_MS)){
+      ordersRef.child(id).remove();
+    }
+  });
+}
+setInterval(()=>{ cleanupOldOrders(); render(); }, 30000); // ricontrolla ogni 30s per il countdown
+
+function fmtTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+}
+
+function renderItemDetail(item){
+  let parts = [];
+  if(item.veggies && item.veggies.length) parts.push(item.veggies.map(v=>VEGGIE_LBL[v]||v).join(', '));
+  if(item.sauces && item.sauces.length) parts.push(item.sauces.map(s=>SAUCE_LBL[s]||s).join(', '));
+  return parts.join(' · ');
+}
+
+function render(){
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+
+  const list = Object.entries(orders)
+    .map(([id,o])=>({id,...o}))
+    .sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+
+  const filtered = list.filter(o => currentView==='new' ? o.status!=='done' : o.status==='done');
+
+  document.getElementById('countNew').textContent = list.filter(o=>o.status!=='done').length;
+  document.getElementById('countDone').textContent = list.filter(o=>o.status==='done').length;
+
+  if(filtered.length === 0){
+    board.innerHTML = `<div class="empty">${currentView==='new' ? 'Nessun ordine in arrivo' : 'Nessun ordine evaso'}</div>`;
+    return;
+  }
+
+  // per la vista "new", mostra i più vecchi per primi (ordine di arrivo)
+  const ordered = currentView==='new' ? filtered : filtered.slice().reverse();
+
+  ordered.forEach(o=>{
+    const card = document.createElement('div');
+    card.className = 'card' + (o.status==='done' ? ' done' : '');
+
+    const itemsHtml = (o.items||[]).map(item=>{
+      const det = renderItemDetail(item);
+      return `<div class="line-item">
+        <div class="iname">${item.name}</div>
+        ${det ? `<div class="idet">${det}</div>` : ''}
+        ${item.note ? `<div class="inote">📝 ${escapeHtml(item.note)}</div>` : ''}
+      </div>`;
+    }).join('<div style="border-top:1px solid var(--line-soft)"></div>');
+
+    let remainMin = '';
+    if(o.status==='done' && o.doneAt){
+      const remain = Math.max(0, RESET_MS - (Date.now() - o.doneAt));
+      remainMin = Math.ceil(remain/60000) + ' min alla rimozione';
+    }
+
+    card.innerHTML = `
+      <div class="card-head">
+        <div class="order-num">ORDINE #${o.id.slice(-4).toUpperCase()}</div>
+        <div class="order-time">${fmtTime(o.createdAt)}</div>
+      </div>
+      <div class="card-body">${itemsHtml}</div>
+      <div class="card-foot">
+        <button class="btn-ready ${o.status==='done'?'isdone':''}" data-id="${o.id}">
+          ${o.status==='done' ? '✓ EVASO' : 'SEGNA COME PRONTO'}
+        </button>
+        ${remainMin ? `<div class="timer-badge">${remainMin}</div>` : ''}
+      </div>
+    `;
+    card.querySelector('.btn-ready').onclick = (e)=>{
+      const id = e.target.dataset.id;
+      if(o.status!=='done'){
+        ordersRef.child(id).update({status:'done', doneAt: Date.now()});
+      }
+    };
+    board.appendChild(card);
+  });
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
